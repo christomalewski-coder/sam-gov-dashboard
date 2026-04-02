@@ -1,0 +1,9 @@
+{
+  "name": "sam-gov-hosted-dashboard",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Hosted-ready SAM.gov dashboard for lighting / ESCO / SDVOSB pursuits",
+  "scripts": {
+    "dev": "vercel dev"
+  }
+}

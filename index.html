@@ -1,0 +1,291 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>SAM.gov Hosted Dashboard</title>
+  <style>
+    :root{
+      --bg:#f6f8fb; --card:#ffffff; --text:#122033; --muted:#607086;
+      --line:#dde5ef; --accent:#1f4e78; --accent2:#0f766e; --good:#2e7d32; --warn:#b26a00; --bad:#b91c1c;
+    }
+    *{box-sizing:border-box}
+    body{margin:0;font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;background:var(--bg);color:var(--text)}
+    .wrap{max-width:1440px;margin:0 auto;padding:20px}
+    .topbar{display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap;margin-bottom:18px}
+    h1{margin:0;font-size:28px}
+    .sub{color:var(--muted);font-size:14px}
+    .controls,.kpis,.grid{display:grid;gap:14px}
+    .controls{grid-template-columns:repeat(7,minmax(140px,1fr));margin-bottom:14px}
+    .kpis{grid-template-columns:repeat(5,minmax(180px,1fr));margin-bottom:14px}
+    .grid{grid-template-columns:1.35fr .95fr;align-items:start}
+    .card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:16px;box-shadow:0 4px 18px rgba(18,32,51,.05)}
+    .kpi .label{color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.05em}
+    .kpi .value{font-size:30px;font-weight:700;margin-top:6px}
+    label{display:block;font-size:12px;color:var(--muted);margin-bottom:6px}
+    input,select,button{width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:#fff;color:var(--text)}
+    button{cursor:pointer;background:var(--accent);color:#fff;border:none;font-weight:600}
+    button.secondary{background:#eef4fa;color:var(--accent);border:1px solid #cfe0f0}
+    .actions{display:flex;gap:8px}
+    .actions > *{flex:1}
+    .section-title{font-size:16px;font-weight:700;margin:0 0 10px}
+    table{width:100%;border-collapse:collapse;font-size:13px}
+    th,td{padding:10px 8px;border-bottom:1px solid var(--line);vertical-align:top;text-align:left}
+    th{position:sticky;top:0;background:#fbfcfe;z-index:1}
+    .table-wrap{max-height:600px;overflow:auto;border:1px solid var(--line);border-radius:12px}
+    .pill{display:inline-block;padding:4px 8px;border-radius:999px;font-size:12px;font-weight:700}
+    .pursue{background:#e6f4ea;color:var(--good)}
+    .review{background:#fff4d6;color:var(--warn)}
+    .watch{background:#fde7dd;color:var(--bad)}
+    .expired{background:#f2f2f2;color:#666}
+    .small{font-size:12px;color:var(--muted)}
+    .chart{width:100%;height:300px;border:1px solid var(--line);border-radius:12px;padding:10px}
+    .legend{display:flex;gap:12px;flex-wrap:wrap;font-size:12px;color:var(--muted);margin-top:8px}
+    .legend span::before{content:"";display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:6px;vertical-align:middle}
+    .c1::before{background:#1f4e78}.c2::before{background:#0f766e}.c3::before{background:#b26a00}.c4::before{background:#b91c1c}
+    .mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+    .inline{display:flex;gap:8px;align-items:end}
+    @media (max-width: 1100px){ .grid{grid-template-columns:1fr} .controls{grid-template-columns:repeat(2,1fr)} .kpis{grid-template-columns:repeat(2,1fr)} }
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <div class="topbar">
+    <div>
+      <h1>SAM.gov Hosted Dashboard</h1>
+      <div class="sub">Live hosted dashboard for lighting, ESCO, and SDVOSB pursuits using a server-side SAM.gov relay.</div>
+    </div>
+    <div class="actions" style="min-width:320px">
+      <button id="refreshBtn">Refresh live data</button>
+      <button class="secondary" id="downloadFiltered">Export filtered</button>
+    </div>
+  </div>
+
+  <div class="controls">
+    <div class="card"><label>Search query</label><input id="queryBox" value='("LED" OR lighting OR "sports lighting" OR retrofit OR controls OR ESCO OR "energy savings")' /></div>
+    <div class="card"><label>Posted from days</label><input id="postedDays" type="number" value="14" min="1" max="365" /></div>
+    <div class="card"><label>Limit</label><input id="limitBox" type="number" value="100" min="1" max="1000" /></div>
+    <div class="card"><label>State</label><select id="stateFilter"><option value="">All</option></select></div>
+    <div class="card"><label>State Tier</label><select id="tierFilter"><option value="">All</option></select></div>
+    <div class="card"><label>Priority Bucket</label><select id="bucketFilter"><option value="">All</option></select></div>
+    <div class="card"><label>Only due in 14 days</label><select id="dueSoonFilter"><option value="">All</option><option value="yes">Yes</option></select></div>
+  </div>
+
+  <div class="kpis">
+    <div class="card kpi"><div class="label">Open opportunities</div><div class="value" id="kpiCount">0</div></div>
+    <div class="card kpi"><div class="label">Pipeline value</div><div class="value" id="kpiValue">$0</div></div>
+    <div class="card kpi"><div class="label">Pursue</div><div class="value" id="kpiPursue">0</div></div>
+    <div class="card kpi"><div class="label">Due in 14 days</div><div class="value" id="kpiDue">0</div></div>
+    <div class="card kpi"><div class="label">Avg priority score</div><div class="value" id="kpiScore">0</div></div>
+  </div>
+
+  <div class="grid">
+    <div class="card">
+      <div class="section-title">Opportunity table</div>
+      <div class="table-wrap">
+        <table id="dataTable">
+          <thead>
+            <tr>
+              <th>Notice ID</th><th>Title</th><th>Agency</th><th>State</th><th>Tier</th>
+              <th>Value</th><th>Days Left</th><th>Score</th><th>Bucket</th><th>Owner</th><th>Next Action</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div style="display:grid;gap:14px">
+      <div class="card">
+        <div class="section-title">Pipeline by priority bucket</div>
+        <svg id="bucketChart" class="chart" viewBox="0 0 560 300"></svg>
+        <div class="legend"><span class="c1">Pursue</span><span class="c2">Review</span><span class="c3">Watch</span><span class="c4">Expired</span></div>
+      </div>
+      <div class="card">
+        <div class="section-title">Top states by pipeline value</div>
+        <svg id="stateChart" class="chart" viewBox="0 0 560 300"></svg>
+      </div>
+      <div class="card">
+        <div class="section-title">How this works</div>
+        <div class="small" style="line-height:1.6">
+          The browser calls <span class="mono">/api/search</span> on your hosted site.<br/>
+          The serverless function uses your SAM.gov API key from a secure environment variable.<br/>
+          The API key never appears in the browser.<br/><br/>
+          To go live, deploy this package on Vercel and add <span class="mono">SAM_API_KEY</span> in project settings.
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+let rawRows = [];
+let filteredRows = [];
+
+function toNum(v){
+  const n = parseFloat(String(v).replace(/[$,]/g,""));
+  return Number.isFinite(n) ? n : 0;
+}
+function unique(rows, key){
+  return [...new Set(rows.map(r => r[key] || "").filter(Boolean))].sort();
+}
+function fillSelect(id, values){
+  const sel = document.getElementById(id);
+  const current = sel.value;
+  const first = sel.options[0].outerHTML;
+  sel.innerHTML = first + values.map(v => `<option value="${escapeHtml(v)}">${escapeHtml(v)}</option>`).join("");
+  if(values.includes(current)) sel.value = current;
+}
+function escapeHtml(s){
+  return String(s ?? "").replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+}
+function money(n){
+  return new Intl.NumberFormat("en-US", {style:"currency", currency:"USD", maximumFractionDigits:0}).format(n || 0);
+}
+function bucketClass(bucket){
+  const b = String(bucket || "").toLowerCase();
+  if(b === "pursue") return "pill pursue";
+  if(b === "review") return "pill review";
+  if(b === "expired") return "pill expired";
+  return "pill watch";
+}
+
+async function refreshLiveData(){
+  const q = encodeURIComponent(document.getElementById("queryBox").value.trim());
+  const postedFromDays = encodeURIComponent(document.getElementById("postedDays").value);
+  const limit = encodeURIComponent(document.getElementById("limitBox").value);
+  const res = await fetch(`/api/search?q=${q}&postedFromDays=${postedFromDays}&limit=${limit}`);
+  const data = await res.json();
+  if(!res.ok) {
+    alert(data.detail || data.error || "Live refresh failed.");
+    return;
+  }
+  rawRows = Array.isArray(data.rows) ? data.rows : [];
+  fillSelect("stateFilter", unique(rawRows, "State"));
+  fillSelect("tierFilter", unique(rawRows, "State Tier"));
+  fillSelect("bucketFilter", unique(rawRows, "Priority Bucket"));
+  applyFilters();
+}
+
+function applyFilters(){
+  const state = document.getElementById("stateFilter").value;
+  const tier = document.getElementById("tierFilter").value;
+  const bucket = document.getElementById("bucketFilter").value;
+  const dueSoon = document.getElementById("dueSoonFilter").value;
+
+  filteredRows = rawRows.filter(r => {
+    const days = toNum(r["Days Left"]);
+    return (!state || r["State"] === state)
+      && (!tier || r["State Tier"] === tier)
+      && (!bucket || r["Priority Bucket"] === bucket)
+      && (!dueSoon || (days >= 0 && days <= 14));
+  });
+  filteredRows.sort((a,b) => toNum(b["Priority Score"]) - toNum(a["Priority Score"]));
+  renderAll();
+}
+
+function renderKPIs(){
+  const totalValue = filteredRows.reduce((s,r) => s + toNum(r["Estimated Value ($)"]), 0);
+  const pursue = filteredRows.filter(r => r["Priority Bucket"] === "Pursue").length;
+  const due = filteredRows.filter(r => { const d = toNum(r["Days Left"]); return d >= 0 && d <= 14; }).length;
+  const avgScore = filteredRows.length ? Math.round(filteredRows.reduce((s,r) => s + toNum(r["Priority Score"]), 0) / filteredRows.length) : 0;
+
+  document.getElementById("kpiCount").textContent = filteredRows.length;
+  document.getElementById("kpiValue").textContent = money(totalValue);
+  document.getElementById("kpiPursue").textContent = pursue;
+  document.getElementById("kpiDue").textContent = due;
+  document.getElementById("kpiScore").textContent = avgScore;
+}
+
+function renderTable(){
+  const tbody = document.querySelector("#dataTable tbody");
+  tbody.innerHTML = filteredRows.map(r => `
+    <tr>
+      <td class="mono">${escapeHtml(r["Notice ID"])}</td>
+      <td><div style="font-weight:600">${escapeHtml(r["Title"])}</div><div class="small">${escapeHtml(r["City"] || "")}</div></td>
+      <td>${escapeHtml(r["Agency"])}</td>
+      <td>${escapeHtml(r["State"])}</td>
+      <td>${escapeHtml(r["State Tier"])}</td>
+      <td>${money(toNum(r["Estimated Value ($)"]))}</td>
+      <td>${escapeHtml(r["Days Left"])}</td>
+      <td>${escapeHtml(r["Priority Score"])}</td>
+      <td><span class="${bucketClass(r["Priority Bucket"])}">${escapeHtml(r["Priority Bucket"])}</span></td>
+      <td>${escapeHtml(r["Owner"])}</td>
+      <td>${escapeHtml(r["Next Action"])}</td>
+    </tr>
+  `).join("");
+}
+
+function drawBarChart(svgId, items, colors){
+  const svg = document.getElementById(svgId);
+  const W = 560, H = 300, p = {t:16,r:16,b:48,l:56};
+  const plotW = W - p.l - p.r, plotH = H - p.t - p.b;
+  const max = Math.max(1, ...items.map(x => x.value));
+  let html = `<rect x="0" y="0" width="${W}" height="${H}" fill="white"/>`;
+  for(let i=0;i<=4;i++){
+    const y = p.t + (plotH * i / 4);
+    html += `<line x1="${p.l}" y1="${y}" x2="${W-p.r}" y2="${y}" stroke="#e8eef5"/>`;
+  }
+  items.forEach((item, i) => {
+    const bw = plotW / Math.max(items.length,1) * 0.64;
+    const gap = plotW / Math.max(items.length,1);
+    const x = p.l + i * gap + (gap - bw)/2;
+    const h = item.value / max * plotH;
+    const y = p.t + plotH - h;
+    html += `<rect x="${x}" y="${y}" width="${bw}" height="${h}" rx="6" fill="${colors[i % colors.length]}"/>`;
+    html += `<text x="${x + bw/2}" y="${y - 6}" font-size="11" text-anchor="middle" fill="#607086">${item.label2 || item.value.toLocaleString()}</text>`;
+    html += `<text x="${x + bw/2}" y="${H - 20}" font-size="11" text-anchor="middle" fill="#122033">${escapeHtml(item.label)}</text>`;
+  });
+  svg.innerHTML = html;
+}
+
+function renderCharts(){
+  const buckets = ["Pursue","Review","Watch","Expired"].map((b) => {
+    const value = filteredRows.filter(r => r["Priority Bucket"] === b).reduce((s,r) => s + toNum(r["Estimated Value ($)"]), 0);
+    return { label: b, value, label2: money(value) };
+  });
+  drawBarChart("bucketChart", buckets, ["#1f4e78","#0f766e","#b26a00","#b91c1c"]);
+
+  const byState = {};
+  filteredRows.forEach(r => {
+    const s = r["State"] || "Unknown";
+    byState[s] = (byState[s] || 0) + toNum(r["Estimated Value ($)"]);
+  });
+  const topStates = Object.entries(byState)
+    .map(([label, value]) => ({label, value, label2: money(value)}))
+    .sort((a,b) => b.value - a.value)
+    .slice(0, 6);
+  drawBarChart("stateChart", topStates, ["#1f4e78","#0f766e","#4f6fad","#789d4a","#b26a00","#8f5ea2"]);
+}
+
+function renderAll(){
+  renderKPIs();
+  renderTable();
+  renderCharts();
+}
+
+document.getElementById("refreshBtn").addEventListener("click", refreshLiveData);
+["stateFilter","tierFilter","bucketFilter","dueSoonFilter"].forEach(id => {
+  document.getElementById(id).addEventListener("change", applyFilters);
+});
+
+document.getElementById("downloadFiltered").addEventListener("click", () => {
+  if(!filteredRows.length) return;
+  const keys = Object.keys(filteredRows[0]);
+  const lines = [
+    keys.join(","),
+    ...filteredRows.map(r => keys.map(k => {
+      const v = String(r[k] ?? "");
+      return /[",\n]/.test(v) ? `"${v.replace(/"/g,'""')}"` : v;
+    }).join(","))
+  ];
+  const blob = new Blob([lines.join("\n")], {type:"text/csv;charset=utf-8"});
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "filtered_opportunities.csv";
+  a.click();
+  URL.revokeObjectURL(a.href);
+});
+</script>
+</body>
+</html>
