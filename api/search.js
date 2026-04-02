@@ -5,9 +5,90 @@ const tier3 = new Set(["AR","MS","NE","ID","MT","WY","ND","SD","WV","ME","NH","V
 const TARGET_AGENCIES = [
   "VETERANS", "ARMY", "AIR FORCE", "NAVY", "USACE", "GSA", "ENERGY", "DHS", "POSTAL"
 ];
-const TARGET_NAICS = new Set(["238210", "238220", "335122", "335129", "423610", "541330", "561210"]);
-const TARGET_PSC = new Set(["N046", "N059", "J065", "S112", "R425", "R499", "N063", "R408", "Z2JZ"]);
-const KEYWORDS = ["LED", "LIGHT", "ESCO", "ENERGY", "CONTROL", "SPORT", "STREET", "MAINTENANCE", "RETROFIT"];
+
+// Tightened for lighting-first targeting
+const TARGET_NAICS = new Set([
+  "238210", // Electrical Contractors
+  "335122", // Commercial/Institutional Lighting Fixtures
+  "335129"  // Other Lighting Equipment
+]);
+
+const TARGET_PSC = new Set([
+  "N046", // Installation of lighting fixtures and lamps
+  "N059"  // Installation of generators/other electrical? still useful when lighting packages appear
+]);
+
+// Strong positive phrases only
+const STRONG_LIGHTING_PHRASES = [
+  "LED LIGHTING",
+  "LIGHTING RETROFIT",
+  "LIGHTING UPGRADE",
+  "LIGHTING REPLACEMENT",
+  "FIXTURE REPLACEMENT",
+  "RELIGHTING",
+  "SPORTS LIGHTING",
+  "FIELD LIGHTING",
+  "STADIUM LIGHTING",
+  "PARKING LOT LIGHTING",
+  "SITE LIGHTING",
+  "STREET LIGHTING",
+  "ROADWAY LIGHTING",
+  "EXTERIOR LIGHTING",
+  "INTERIOR LIGHTING",
+  "LIGHTING CONTROLS",
+  "LED FIXTURE",
+  "LIGHT POLE",
+  "AREA LIGHTING"
+];
+
+// ESCO is only meaningful if lighting is also present
+const ESCO_PHRASES = [
+  "ESCO",
+  "ENERGY SAVINGS PERFORMANCE CONTRACT",
+  "PERFORMANCE CONTRACT"
+];
+
+// Hard exclusions for junk / unrelated scopes
+const EXCLUDE_KEYWORDS = [
+  "HVAC",
+  "AIR HANDLER",
+  "CHILLER",
+  "BOILER",
+  "GENERATOR",
+  "UPS",
+  "BATTERY SYSTEM",
+  "INTRUSION",
+  "ACCESS CONTROL",
+  "SECURITY CAMERA",
+  "VIDEO SURVEILLANCE",
+  "STERILIZER",
+  "STERILIZATION",
+  "TELERADIOLOGY",
+  "RADIOLOGY",
+  "MEDICAL GAS",
+  "LAUNDRY",
+  "GROUNDS MAINTENANCE",
+  "LANDSCAPING",
+  "TREE TRIMMING",
+  "JANITORIAL",
+  "CUSTODIAL",
+  "ROOFING",
+  "PLUMBING",
+  "DOOR HARDWARE",
+  "FIRE ALARM",
+  "SPRINKLER",
+  "ELEVATOR",
+  "PAVING",
+  "CONCRETE",
+  "PAINTING SERVICES",
+  "INSTRUCTIONAL DESIGN",
+  "TRAINING SUPPORT",
+  "STAFFING",
+  "TELCOM",
+  "TELECOMMUNICATIONS",
+  "NETWORKING",
+  "SERVER ROOM"
+];
 
 function getStateTier(state) {
   if (tier1.has(state)) return { tier: "Tier 1", weight: 5 };
@@ -36,8 +117,49 @@ function formatSamDate(d) {
   return `${mm}/${dd}/${yyyy}`;
 }
 
+function includesAny(text, phrases) {
+  return phrases.some(p => text.includes(p));
+}
+
+function hasStrongLightingSignal(title, description = "") {
+  const text = `${title} ${description}`.toUpperCase();
+  return includesAny(text, STRONG_LIGHTING_PHRASES);
+}
+
+function hasEscoLightingSignal(title, description = "") {
+  const text = `${title} ${description}`.toUpperCase();
+  return includesAny(text, ESCO_PHRASES) && includesAny(text, ["LIGHT", "LIGHTING", "LED", "FIXTURE"]);
+}
+
+function hasExclusion(title, description = "") {
+  const text = `${title} ${description}`.toUpperCase();
+  return includesAny(text, EXCLUDE_KEYWORDS);
+}
+
+function isLightingFit(o) {
+  const title = String(o.title || "");
+  const description = String(o.description || o.additionalInfoLinkDescription || "");
+  const naics = String(o.naicsCode || "");
+  const psc = String(o.classificationCode || "");
+
+  const strongLighting = hasStrongLightingSignal(title, description);
+  const escoLighting = hasEscoLightingSignal(title, description);
+  const codeLighting = TARGET_NAICS.has(naics) || TARGET_PSC.has(psc);
+
+  // If it's excluded and doesn't have a very strong lighting phrase, reject it
+  if (hasExclusion(title, description) && !strongLighting) {
+    return false;
+  }
+
+  // Must have one strong reason to be in the pipeline
+  return strongLighting || escoLighting || codeLighting;
+}
+
 function scoreOpportunity(o) {
   const title = String(o.title || "").toUpperCase();
+  const description = String(o.description || o.additionalInfoLinkDescription || "").toUpperCase();
+  const combinedText = `${title} ${description}`;
+
   const agency = String(o.fullParentPathName || "").toUpperCase();
   const setAside = String(o.typeOfSetAsideDescription || o.typeOfSetAside || "").toUpperCase();
   const naics = String(o.naicsCode || "");
@@ -51,7 +173,10 @@ function scoreOpportunity(o) {
   const dueDays = daysLeftFrom(o.responseDeadLine);
   const { tier, weight } = getStateTier(state);
 
-  const keywordMatch = KEYWORDS.some(k => title.includes(k)) ? "Yes" : "No";
+  const strongLighting = hasStrongLightingSignal(title, description);
+  const escoLighting = hasEscoLightingSignal(title, description);
+
+  const keywordMatch = strongLighting || escoLighting ? "Yes" : "No";
   const agencyTarget = TARGET_AGENCIES.some(k => agency.includes(k)) ? "Yes" : "No";
   const setAsideMatch =
     (setAside.includes("SDVOSB") || setAside.includes("VOSB")) ? "Yes" :
@@ -59,25 +184,36 @@ function scoreOpportunity(o) {
   const codeMatch = (TARGET_NAICS.has(naics) || TARGET_PSC.has(psc)) ? "Yes" : "No";
 
   let score = 0;
-  if (keywordMatch === "Yes") score += 18;
-  if (agencyTarget === "Yes") score += 12;
-  if (setAsideMatch === "Yes") score += 20;
-  else if (setAsideMatch === "Partial") score += 10;
-  if (TARGET_NAICS.has(naics)) score += 10;
-  if (TARGET_PSC.has(psc)) score += 10;
+
+  // Heavy weight on real lighting scope
+  if (strongLighting) score += 35;
+  if (escoLighting) score += 12;
+
+  if (agencyTarget === "Yes") score += 10;
+  if (setAsideMatch === "Yes") score += 18;
+  else if (setAsideMatch === "Partial") score += 8;
+
+  if (TARGET_NAICS.has(naics)) score += 12;
+  if (TARGET_PSC.has(psc)) score += 12;
+
   if (dueDays !== "" && dueDays >= 0 && dueDays <= 14) score += 8;
   if (awardCeiling >= 100000) score += 10;
+  if (awardCeiling >= 500000) score += 5;
+
   score += weight * 2;
+
+  // Penalty for non-lighting signals sneaking through via code match
+  if (!strongLighting && !escoLighting) score -= 20;
 
   let bucket = "Watch";
   if (dueDays !== "" && dueDays < 0) bucket = "Expired";
-  else if (score >= 72) bucket = "Pursue";
-  else if (score >= 50) bucket = "Review";
+  else if (score >= 72 && (strongLighting || escoLighting || TARGET_PSC.has(psc))) bucket = "Pursue";
+  else if (score >= 50 && (strongLighting || escoLighting || TARGET_NAICS.has(naics) || TARGET_PSC.has(psc))) bucket = "Review";
 
   const nextAction =
     bucket === "Pursue" ? "Call and qualify immediately" :
-    bucket === "Review" ? "Assess teaming, pricing, and compliance" :
-    bucket === "Watch" ? "Monitor and follow up" :
+    bucket === "Review" ? "Assess scope, pricing, and teaming fit" :
+    bucket === "Watch" ? "Monitor only if lighting scope becomes clearer" :
     "Archive or close";
 
   return {
@@ -93,7 +229,7 @@ function scoreOpportunity(o) {
     "PSC": psc,
     "Estimated Value ($)": awardCeiling,
     "Status": "New",
-    "Fit": (keywordMatch === "Yes" || agencyTarget === "Yes" || codeMatch === "Yes") ? "High" : "Low",
+    "Fit": strongLighting || escoLighting ? "High" : (codeMatch === "Yes" ? "Medium" : "Low"),
     "Capture Stage": "Identify",
     "Keyword Match?": keywordMatch,
     "Agency Target?": agencyTarget,
@@ -124,7 +260,10 @@ module.exports = async (req, res) => {
 
     const postedFromDays = Number(req.query.postedFromDays || 14);
     const limit = Number(req.query.limit || 100);
-    const q = req.query.q || '("LED" OR lighting OR "sports lighting" OR retrofit OR controls OR ESCO OR "energy savings")';
+
+    // Tightened default query
+    const q = req.query.q || '(("LED lighting" OR "lighting retrofit" OR relighting OR "sports lighting" OR "street lighting" OR "parking lot lighting" OR "lighting controls" OR "interior lighting" OR "exterior lighting" OR "fixture replacement") OR ("energy savings performance contract" AND lighting) OR (ESCO AND lighting))';
+
     const stateFilter = String(req.query.state || "").toUpperCase();
     const setAsideFilter = String(req.query.setAside || "").toUpperCase();
     const tierFilter = String(req.query.tier || "").toUpperCase();
@@ -156,7 +295,12 @@ module.exports = async (req, res) => {
 
     const data = await response.json();
     const raw = Array.isArray(data.opportunitiesData) ? data.opportunitiesData : [];
-    let rows = raw.map(scoreOpportunity);
+
+    // Hard filter before scoring
+    let rows = raw
+      .filter(isLightingFit)
+      .map(scoreOpportunity)
+      .filter(r => r["Priority Bucket"] !== "Expired" || r["Days Left"] === "");
 
     if (stateFilter) {
       rows = rows.filter(r => String(r["State"]).toUpperCase() === stateFilter);
