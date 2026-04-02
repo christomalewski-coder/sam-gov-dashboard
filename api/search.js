@@ -29,6 +29,13 @@ function daysLeftFrom(dueDate) {
   return Math.ceil((due - now) / (1000 * 60 * 60 * 24));
 }
 
+function formatSamDate(d) {
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  const yyyy = d.getFullYear();
+  return `${mm}/${dd}/${yyyy}`;
+}
+
 function scoreOpportunity(o) {
   const title = String(o.title || "").toUpperCase();
   const agency = String(o.fullParentPathName || "").toUpperCase();
@@ -36,14 +43,19 @@ function scoreOpportunity(o) {
   const naics = String(o.naicsCode || "");
   const psc = String(o.classificationCode || "");
   const awardCeiling = toNumber(o.awardCeiling);
-  const state = String((o.placeOfPerformance && o.placeOfPerformance.state) || o.placeOfPerformanceState || "").toUpperCase();
+
+  const place = o.placeOfPerformance || {};
+  const state = String(place.state || o.placeOfPerformanceState || "").toUpperCase();
+  const city = String(place.city || o.placeOfPerformanceCity || "");
+
   const dueDays = daysLeftFrom(o.responseDeadLine);
   const { tier, weight } = getStateTier(state);
 
   const keywordMatch = KEYWORDS.some(k => title.includes(k)) ? "Yes" : "No";
   const agencyTarget = TARGET_AGENCIES.some(k => agency.includes(k)) ? "Yes" : "No";
-  const setAsideMatch = (setAside.includes("SDVOSB") || setAside.includes("VOSB")) ? "Yes"
-    : ((setAside.includes("SMALL") || setAside.includes("8(A)") || setAside.includes("HUBZONE")) ? "Partial" : "No");
+  const setAsideMatch =
+    (setAside.includes("SDVOSB") || setAside.includes("VOSB")) ? "Yes" :
+    ((setAside.includes("SMALL") || setAside.includes("8(A)") || setAside.includes("HUBZONE")) ? "Partial" : "No");
   const codeMatch = (TARGET_NAICS.has(naics) || TARGET_PSC.has(psc)) ? "Yes" : "No";
 
   let score = 0;
@@ -95,7 +107,7 @@ function scoreOpportunity(o) {
     "Next Action": nextAction,
     "Owner": "Chris",
     "Source URL": o.uiLink || "",
-    "City": (o.placeOfPerformance && o.placeOfPerformance.city) || o.placeOfPerformanceCity || "",
+    "City": city,
     "Notes": ""
   };
 }
@@ -103,8 +115,11 @@ function scoreOpportunity(o) {
 module.exports = async (req, res) => {
   try {
     const apiKey = process.env.SAM_API_KEY;
+
     if (!apiKey) {
-      return res.status(500).json({ error: "Missing SAM_API_KEY environment variable." });
+      return res.status(500).json({
+        error: "Missing SAM_API_KEY environment variable."
+      });
     }
 
     const postedFromDays = Number(req.query.postedFromDays || 14);
@@ -114,19 +129,14 @@ module.exports = async (req, res) => {
     const setAsideFilter = String(req.query.setAside || "").toUpperCase();
     const tierFilter = String(req.query.tier || "").toUpperCase();
     const ownerFilter = String(req.query.owner || "").toUpperCase();
-function formatSamDate(d) {
-  const mm = String(d.getMonth() + 1).padStart(2, "0");
-  const dd = String(d.getDate()).padStart(2, "0");
-  const yyyy = d.getFullYear();
-  return `${mm}/${dd}/${yyyy}`;
-}
-   url.searchParams.set("postedFrom", formatSamDate(postedFrom));
-url.searchParams.set("postedTo", formatSamDate(today));
+
+    const today = new Date();
+    const postedFrom = new Date(today.getTime() - postedFromDays * 24 * 60 * 60 * 1000);
 
     const url = new URL("https://api.sam.gov/prod/opportunities/v2/search");
     url.searchParams.set("api_key", apiKey);
-    url.searchParams.set("postedFrom", postedFrom.toISOString().slice(0, 10));
-    url.searchParams.set("postedTo", today.toISOString().slice(0, 10));
+    url.searchParams.set("postedFrom", formatSamDate(postedFrom));
+    url.searchParams.set("postedTo", formatSamDate(today));
     url.searchParams.set("limit", String(limit));
     url.searchParams.set("offset", "0");
     url.searchParams.set("ptype", "o");
@@ -138,17 +148,31 @@ url.searchParams.set("postedTo", formatSamDate(today));
 
     if (!response.ok) {
       const text = await response.text();
-      return res.status(response.status).json({ error: "SAM.gov request failed", detail: text });
+      return res.status(response.status).json({
+        error: "SAM.gov request failed",
+        detail: text
+      });
     }
 
     const data = await response.json();
     const raw = Array.isArray(data.opportunitiesData) ? data.opportunitiesData : [];
     let rows = raw.map(scoreOpportunity);
 
-    if (stateFilter) rows = rows.filter(r => String(r["State"]).toUpperCase() === stateFilter);
-    if (setAsideFilter) rows = rows.filter(r => String(r["Set-Aside"]).toUpperCase().includes(setAsideFilter));
-    if (tierFilter) rows = rows.filter(r => String(r["State Tier"]).toUpperCase() === tierFilter);
-    if (ownerFilter) rows = rows.filter(r => String(r["Owner"]).toUpperCase() === ownerFilter);
+    if (stateFilter) {
+      rows = rows.filter(r => String(r["State"]).toUpperCase() === stateFilter);
+    }
+
+    if (setAsideFilter) {
+      rows = rows.filter(r => String(r["Set-Aside"]).toUpperCase().includes(setAsideFilter));
+    }
+
+    if (tierFilter) {
+      rows = rows.filter(r => String(r["State Tier"]).toUpperCase() === tierFilter);
+    }
+
+    if (ownerFilter) {
+      rows = rows.filter(r => String(r["Owner"]).toUpperCase() === ownerFilter);
+    }
 
     rows.sort((a, b) => Number(b["Priority Score"] || 0) - Number(a["Priority Score"] || 0));
 
