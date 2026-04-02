@@ -114,9 +114,14 @@ module.exports = async (req, res) => {
     const setAsideFilter = String(req.query.setAside || "").toUpperCase();
     const tierFilter = String(req.query.tier || "").toUpperCase();
     const ownerFilter = String(req.query.owner || "").toUpperCase();
-
-    const today = new Date();
-    const postedFrom = new Date(today.getTime() - postedFromDays * 24 * 60 * 60 * 1000);
+function formatSamDate(d) {
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  const yyyy = d.getFullYear();
+  return `${mm}/${dd}/${yyyy}`;
+}
+   url.searchParams.set("postedFrom", formatSamDate(postedFrom));
+url.searchParams.set("postedTo", formatSamDate(today));
 
     const url = new URL("https://api.sam.gov/prod/opportunities/v2/search");
     url.searchParams.set("api_key", apiKey);
